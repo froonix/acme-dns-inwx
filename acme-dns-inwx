@@ -1,0 +1,505 @@
+#!/usr/bin/env php
+<?php
+
+/**********************************************************************
+ *                                                                    *
+ *  ACME-DNS-CHALLENGE WRAPPER SCRIPT (DNS TXT RECORDS) FOR INWX-API  *
+ * ------------------------------------------------------------------ *
+ *  v0.1.0 released at 2016-10-24 by Christian Schrötter <cs@fnx.li>  *
+ *                                                                    *
+ * TODO: Choose License...                                            *
+ *                                                                    *
+ **********************************************************************/
+
+set_error_handler('error_handler');
+error_reporting(-1);
+
+if(version_compare(PHP_VERSION, '5.5.0', '<'))
+{
+	throw new Exception('PHP 5.5.0 or newer is required');
+}
+else if(!extension_loaded('curl') || !extension_loaded('xmlrpc'))
+{
+	throw new Exception('Required modules not found: cURL and XML-RPC');
+}
+else if(PHP_SAPI !== 'cli')
+{
+	throw new Exception('This script is for CLI execution only');
+}
+
+if($argc < 2 || $argc > 3)
+{
+	print("Use the INWX-API to update a TXT-record for ACME dns-01 challenge.\n");
+	printf("Usage: %s <hostname> [<txtvalue>]\n\n", $argv[0]);
+	print("_acme-challenge will be prepended to the hostname. Subdomains are fully supported.\n");
+	print("Without a txtvalue, the corresponding record will be deleted! TTL is set to 300.\n\n");
+	print("It's required to place a file called .inwx.ini in your home directory. Example configuration below:\n\n");
+	print("  username = \"your inwx username\"\n  password = \"your inwx password\"\n  secret   = \"TOTP shared secret\"\n\n");
+	print("secret is optional and only required if your account is protected by 2-factor-authentication.\n");
+	print("PHP 5.5 or newer is required, also cURL and XML-RPC modules. Take a look at the source code too.\n");
+	exit(1);
+}
+
+$hostname    = $argv[1];
+$recordvalue = isset($argv[2]) ? $argv[2] : null;
+
+$ini = parse_ini_file($_SERVER['HOME'] . '/.inwx.ini');
+$ini['secret'] = (!isset($ini['secret'])) ? '' : $ini['secret'];
+
+// DON'T MOVE THIS PART INTO THE CLASS!
+openlog('INWX-API', LOG_PID, LOG_USER);
+
+$inwx = new INWX();
+$inwx->setAuthData($ini['username'], $ini['password'], $ini['secret']);
+$inwx->login();
+
+// Split domain name to subdomains.
+$hostparts = explode('.', $hostname);
+$fulldomain = array_pop($hostparts);
+$recordname = null;
+
+while(($nextpart = array_pop($hostparts)) !== null)
+{
+	$fulldomain = sprintf('%s.%s', $nextpart, $fulldomain);
+	if(($domain = $inwx->getDomain($fulldomain, true)) !== false)
+	{
+		// We found the domain! Prepend challenge name.
+		array_unshift($hostparts, '_acme-challenge');
+		$recordname = implode('.', $hostparts);
+		break;
+	}
+}
+
+if($recordname === null)
+{
+	throw new Exception(sprintf('Domain %s does not exist in this account', $hostname));
+}
+
+// Check if the record exists. The ID is required for update/delete.
+$record = $inwx->getRecord($fulldomain, $recordname, 'TXT', true);
+
+if($recordvalue === null)
+{
+	if(isset($record['record'][0]))
+	{
+		if(count($record['record']) > 1)
+		{
+			// There are multiple records! This is strange, but we can delete all of them.
+			fwrite(STDERR, "Warning: Multiple records found! Deleting all of them.\n");
+			$inwx->deleteRecords(array_column($record['record'], 'id'));
+		}
+		else
+		{
+			// The record exists, we can delete it now.
+			$inwx->deleteRecord($record['record'][0]['id']);
+		}
+	}
+}
+else
+{
+	if(isset($record['record']) && count($record['record']) > 1)
+	{
+		// There are multiple records! This is strange. Because we can't update
+		// all of them, let's delete it first and create a new one afterwards.
+		fwrite(STDERR, "Warning: Multiple records found! Deleting all of them.\n");
+		fwrite(STDERR, "         A new TXT record will be created afterwards.\n");
+		$inwx->deleteRecords(array_column($record['record'], 'id'));
+		$record = false;
+	}
+
+	if($record === false || !isset($record['record'][0]))
+	{
+		// The record does not exist. We have to create it with challenge data.
+		$inwx->createRecord($fulldomain, $recordname, 'TXT', $recordvalue, 300);
+	}
+	else
+	{
+		// The record already exists. Let's update the challenge data.
+		$inwx->updateRecord($record['record'][0]['id'], $recordvalue, 300);
+	}
+}
+
+// Close API...
+unset($inwx);
+
+// and quit...
+exit(0);
+
+########################################################################
+#                            EXTERNAL LIBS                             #
+########################################################################
+
+// Convert PHP errors to exceptions. This is very usefull!
+function error_handler($severity, $message, $file, $line)
+{
+	if(!(error_reporting() & $severity))
+	{
+		return;
+	}
+
+	throw new ErrorException($message, 0, $severity, $file, $line);
+}
+
+// Minimal API implementation for INWX
+// by Christian Schrötter <cs@fnx.li>
+class INWX
+{
+	private $curl     = null;
+	private $username = null;
+	private $password = null;
+	private $secret   = null;
+
+	public function __construct()
+	{
+		$this->curl = curl_init();
+		$this->initializeOptions();
+	}
+
+	public function __destruct()
+	{
+		try
+		{
+			$this->logout();
+		}
+		catch(Exception $e)
+		{
+			// Ignore all errors, it does not matter.
+			// Otherwise we would get strange errors!
+		}
+
+		if($this->curl !== null)
+		{
+			curl_close($this->curl);
+			unset($this->curl); # ?
+		}
+	}
+
+	public function setAuthData(string $username, string $password, string $secret = '')
+	{
+		$this->username = $username;
+		$this->password = $password;
+		$this->secret   = $secret;
+	}
+
+	private function initializeOptions()
+	{
+		$this->setOpt(CURLOPT_TIMEOUT, 30);
+		$this->setOpt(CURLOPT_COOKIEFILE, '');
+		$this->setOpt(CURLOPT_COOKIESESSION, true);
+		$this->setOpt(CURLOPT_RETURNTRANSFER, true);
+		$this->setOpt(CURLOPT_SSL_VERIFYPEER, true);
+		$this->setOpt(CURLOPT_HTTPHEADER, ['Content-Type: text/xml']);
+		$this->setOpt(CURLOPT_URL, 'https://api.domrobot.com/xmlrpc/');
+		$this->setOpt(CURLOPT_POST, true);
+	}
+
+	private function setOpt(string $key, $value)
+	{
+		if(!curl_setopt($this->curl, $key, $value))
+		{
+			throw new Exception('Could not set cURL option ' . $key);
+		}
+	}
+
+	public function doRequest($object, $method, $args = [], bool $return = false)
+	{
+		// Cleanup args...
+		$safe_args = $args;
+		unset($safe_args['tan']);
+		unset($safe_args['pass']);
+		unset($safe_args['content']);
+
+		// Not required, but maybe usefull to find bugs.
+		$args['clTRID'] = sprintf('FNX-%d', getmypid());
+		$args['lang']   = 'en';
+
+		$this->setOpt(CURLOPT_POSTFIELDS, xmlrpc_encode_request(strtolower(sprintf('%s.%s', $object, $method)), $args, ['verbosity' => 'no_white_space', 'escaping' => 'markup', 'encoding' => 'UTF-8']));
+
+		for($i = 0; $i < 3; $i++)
+		{
+			// Send action with cleaned arguments to syslog. Retries will be logged too!
+			syslog(LOG_INFO, sprintf('%s.%s: %s', $object, $method, json_encode($safe_args)));
+
+			if(($result = curl_exec($this->curl)) === false)
+			{
+				$error = curl_error($this->curl);
+				$errno = curl_errno($this->curl);
+
+				if($i == 2 || $errno != CURLE_OPERATION_TIMEOUTED)
+				{
+					// Ok, this is a real error, let's quit...
+					throw new RuntimeException($error, $errno);
+				}
+
+				// Retry again later!
+				sleep(mt_rand(15, 45));
+				continue;
+			}
+
+			// Done!
+			break;
+		}
+
+		$result = xmlrpc_decode($result, 'UTF-8');
+		#sleep(mt_rand(3, 8)); // <-- required?
+
+		if($return && $result['code'] === 2303)
+		{
+			return false;
+		}
+		else if($result['code'] < 1000 || $result['code'] >= 2000)
+		{
+			throw new RuntimeException(((isset($result['reason'])) ? sprintf('%s: %s', $result['msg'], $result['reason']) : $result['msg']), $result['code']);
+		}
+		else if(isset($result['resData']))
+		{
+			return $result['resData'];
+		}
+		else
+		{
+			return null;
+		}
+	}
+
+	private function logout()
+	{
+		$this->doRequest('account', 'logout');
+	}
+
+	public function login()
+	{
+		$result = $this->doRequest('account', 'login', ['user' => $this->username, 'pass' => $this->password]);
+
+		if($result['tfa'])
+		{
+			if($this->secret === '')
+			{
+				throw new Exception('Account ist locked but there is no shared secret');
+			}
+
+			for($i = 0; $i < 3; $i++)
+			{
+				try
+				{
+					// We can login only once in 30 seconds! So let's retry it 3 times.
+					$this->doRequest('account', 'unlock', ['tan' => $this->getTAN()]);
+				}
+				catch(RuntimeException $e)
+				{
+					if($i == 2 || $e->getCode() != 2200)
+					{
+						// Game over!
+						throw $e;
+					}
+					else
+					{
+						// Retry at next timeblock!
+						sleep(mt_rand(18, 23));
+						continue;
+					}
+				}
+
+				// Done!
+				break;
+			}
+		}
+	}
+
+	public function getDomain(string $domain, bool $return = false)
+	{
+		return $this->doRequest('domain', 'info', ['domain' => $domain], $return);
+	}
+
+	public function getRecord(string $domain, string $name, string $type, bool $return = false)
+	{
+		return $this->doRequest('nameserver', 'info', ['domain' => $domain, 'name' => $name, 'type' => $type], $return);
+	}
+
+	public function createRecord(string $domain, string $name, string $type, string $content, int $ttl = 3600, bool $return = false)
+	{
+		return $this->doRequest('nameserver', 'createRecord', ['domain' => $domain, 'name' => $name, 'type' => $type, 'content' => $content, 'ttl' => $ttl], $return);
+	}
+
+	public function updateRecord(int $id, string $content, int $ttl = 3600, bool $return = false)
+	{
+		return $this->doRequest('nameserver', 'updateRecord', ['id' => $id, 'content' => $content, 'ttl' => $ttl], $return);
+	}
+
+	public function deleteRecord(int $id)
+	{
+		// Ignore errors like "2303 Object does not exist". This could happen on retries.
+		if($this->doRequest('nameserver', 'deleteRecord', ['id' => $id], true) === false)
+		{
+			return false;
+		}
+
+		return true;
+	}
+
+	public function deleteRecords(array $ids)
+	{
+		$return_value = true;
+		$ids = array_values($ids);
+		$c = count($ids);
+
+		for($i = 0; $i < $c; $i++)
+		{
+			if($this->deleteRecord($ids[$i]) === false && $return_value === true)
+			{
+				$return_value = false;
+			}
+		}
+
+		return $return_value;
+	}
+
+	// TODO: Author/source of this function?
+	private function getTAN()
+	{
+		$secretKey = base32::decode($this->secret);
+		$_timeSlice = floor(time() / 30);
+		$_codeLength = 6;
+
+		// Pack time into binary string
+		$time = chr(0).chr(0).chr(0).chr(0).pack('N*', $_timeSlice);
+
+		// Hash it with users secret key
+		$hm = hash_hmac('SHA1', $time, $secretKey, true);
+
+		// Use last nipple of result as index/offset
+		$offset = ord(substr($hm, -1)) & 0x0F;
+
+		// grab 4 bytes of the result
+		$hashPart = substr($hm, $offset, 4);
+
+		// Unpak binary value
+		$value = unpack('N', $hashPart);
+
+		$value = $value[1];
+
+		// Only 32 bits
+		$value = $value & 0x7FFFFFFF;
+		$modulo = pow(10, $_codeLength);
+
+		return str_pad($value % $modulo, $_codeLength, '0', STR_PAD_LEFT);
+	}
+}
+
+// Base32 Encode/Decode by Bryan Ruiz <bryan@bryanruiz.com>
+// http://php.net/manual/de/function.base-convert.php#102232
+abstract class Base32
+{
+	private static $map =
+	[
+		'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', //  7
+		'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', // 15
+		'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', // 23
+		'Y', 'Z', '2', '3', '4', '5', '6', '7', // 31
+		'='  // padding char
+	];
+
+	private static $flippedMap =
+	[
+		'A' =>  '0', 'B' =>  '1', 'C' =>  '2', 'D' =>  '3', 'E' =>  '4', 'F' =>  '5', 'G' =>  '6', 'H' =>  '7',
+		'I' =>  '8', 'J' =>  '9', 'K' => '10', 'L' => '11', 'M' => '12', 'N' => '13', 'O' => '14', 'P' => '15',
+		'Q' => '16', 'R' => '17', 'S' => '18', 'T' => '19', 'U' => '20', 'V' => '21', 'W' => '22', 'X' => '23',
+		'Y' => '24', 'Z' => '25', '2' => '26', '3' => '27', '4' => '28', '5' => '29', '6' => '30', '7' => '31',
+	];
+
+	// Use padding false when encoding for urls
+	public static function encode($input, $padding = true)
+	{
+		if(empty($input))
+		{
+			return '';
+		}
+
+		$base32 = '';
+		$binaryString = '';
+
+		$input = str_split($input);
+
+		$ci = count($input);
+		for($i = 0; $i < $ci; $i++)
+		{
+			$binaryString .= str_pad(base_convert(ord($input[$i]), 10, 2), 8, '0', STR_PAD_LEFT);
+		}
+
+		$fiveBitBinaryArray = str_split($binaryString, 5);
+
+		$i = 0;
+		$ci = count($fiveBitBinaryArray);
+		while($i < $ci)
+		{
+			$base32 .= self::$map[base_convert(str_pad($fiveBitBinaryArray[$i], 5, '0'), 2, 10)];
+			$i++;
+		}
+
+		if($padding && ($x = strlen($binaryString) % 40) != 0)
+		{
+			switch($x)
+			{
+				case  8: $base32 .= str_repeat(self::$map[32], 6); break;
+				case 16: $base32 .= str_repeat(self::$map[32], 4); break;
+				case 24: $base32 .= str_repeat(self::$map[32], 3); break;
+				case 32: $base32 .=            self::$map[32];     break;
+			}
+		}
+
+		return $base32;
+	}
+
+	public static function decode($input)
+	{
+		if(empty($input))
+		{
+			return;
+		}
+
+		$paddingCharCount = substr_count($input, self::$map[32]);
+		$allowedValues = [6, 4, 3, 1, 0];
+
+		if(!in_array($paddingCharCount, $allowedValues))
+		{
+			return false;
+		}
+
+		for($i = 0; $i < 4; $i++)
+		{
+			if($paddingCharCount == $allowedValues[$i] && substr($input, -($allowedValues[$i])) != str_repeat(self::$map[32], $allowedValues[$i]))
+			{
+				return false;
+			}
+		}
+
+		$input = str_replace('=','', $input);
+		$input = str_split($input);
+		$binaryString = '';
+
+		$ci = count($input);
+		for($i = 0; $i < $ci; $i += 8)
+		{
+			$x = '';
+			if(!in_array($input[$i], self::$map))
+			{
+				return false;
+			}
+
+			for($j = 0; $j < 8; $j++)
+			{
+				$x .= str_pad(base_convert(@self::$flippedMap[@$input[$i + $j]], 10, 2), 5, '0', STR_PAD_LEFT);
+			}
+
+			$eightBits = str_split($x, 8);
+
+			$cz = count($eightBits);
+			for($z = 0; $z < $cz; $z++)
+			{
+				$binaryString .= ( ($y = chr(base_convert($eightBits[$z], 2, 10))) || ord($y) == 48 ) ? $y : '';
+			}
+		}
+		return $binaryString;
+	}
+}
+
+?>
