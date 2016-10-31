@@ -1,0 +1,18 @@
+#!/bin/bash
+
+case $1 in
+
+	add)
+		"$(dirname $0)/acme-dns-inwx" "$2" "$3"
+		;;
+
+	del)
+		"$(dirname $0)/acme-dns-inwx" "$2"
+		;;
+
+	*)
+		echo "Usage: $0 <add|del> <hostname> [<txtvalue>]" 1>&2
+		exit 1
+		;;
+
+esac
