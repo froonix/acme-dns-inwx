@@ -472,7 +472,7 @@ abstract class Base32
 			}
 		}
 
-		$input = str_replace('=','', $input);
+		$input = str_replace('=', '', $input);
 		$input = str_split($input);
 		$binaryString = '';
 
