@@ -4,8 +4,8 @@ ALPHA RELEASE! DON'T USE IT!
 ## getssl.conf
 ```
 VALIDATE_VIA_DNS="true"
-DNS_ADD_COMMAND=~/scripts/acme-dns-inwx.wrapper add
-DNS_DEL_COMMAND=~/scripts/acme-dns-inwx.wrapper del
+DNS_ADD_COMMAND="$HOME/scripts/acme-dns-inwx.wrapper add"
+DNS_DEL_COMMAND="$HOME/scripts/acme-dns-inwx.wrapper del"
 
 DNS_WAIT=10
 DNS_EXTRA_WAIT=60
