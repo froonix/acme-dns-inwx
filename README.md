@@ -12,7 +12,14 @@ shared secret. Don't forget to check file permissions! (recommended: 0600)
 Run it for the first time:
 
 ```
+# Add the TXT record _acme-challenge.example.com
+# with value "test" and set TTL to 300 seconds:
 ./scripts/acme-dns-inwx "example.com" "test"
+
+# Check your nameserver: (wait some time)
+dig TXT _acme-challenge.example.com +short
+
+# Delete the TXT record _acme-challenge.example.com:
 ./scripts/acme-dns-inwx --del "example.com"
 ```
 
