@@ -14,13 +14,13 @@ Run it for the first time:
 ```bash
 # Add the TXT record _acme-challenge.example.com
 # with value "test" and set TTL to 300 seconds:
-./scripts/acme-dns-inwx example.com test
+./scripts/acme-dns-inwx "example.com" "test"
 
 # Check your nameserver: (wait some time)
-dig TXT _acme-challenge.example.com +short
+dig TXT "_acme-challenge.example.com" +short
 
 # Delete the TXT record _acme-challenge.example.com:
-./scripts/acme-dns-inwx --del example.com
+./scripts/acme-dns-inwx --del "example.com"
 ```
 
 Take a look at the wiki for more examples.
