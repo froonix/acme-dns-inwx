@@ -28,12 +28,14 @@ Take a look at the wiki for more examples.
 ## Bugs? Feedback?
 Open a new issue or drop me a line at cs@fnx.li! :-)
 
-Important: This project is **not** affiliated to INWX GmbH!
+Important: This project is **not** affiliated with INWX GmbH!
 
 ## Important links...
-* [INWX API](https://www.inwx.com/en/offer/api)
 * [Bugtracker](https://github.com/froonix/acme-dns-inwx/issues)
 * [Wiki pages](https://github.com/froonix/acme-dns-inwx/wiki)
+
+* [Let's Encrypt](https://letsencrypt.org/)
+* [INWX API](https://www.inwx.com/en/offer/api)
 
 [1]: https://letsencrypt.org/docs/client-options/
 [2]: https://github.com/srvrco/getssl
