@@ -12,9 +12,11 @@ shared secret. Don't forget to check file permissions! (recommended: 0600)
 Run it for the first time:
 
 ```
-scripts/.... add example
-del example
+./scripts/acme-dns-inwx "example.com" "test"
+./scripts/acme-dns-inwx --del "example.com"
 ```
+
+Take a look at the wiki for more examples.
 
 ## Bugs? Feedback?
 Open a new issue or drop me a line at cs@fnx.li! :-)
