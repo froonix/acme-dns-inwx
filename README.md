@@ -20,8 +20,8 @@ del example
 Open a new issue or drop me a line at cs@fnx.li! :-)
 
 ## Important links...
-[Bugtracker](https://github.com/froonix/acme-dns-inwx/issues)
-[Wiki](https://github.com/froonix/acme-dns-inwx/wiki)
+* [Bugtracker](https://github.com/froonix/acme-dns-inwx/issues)
+* [Wiki](https://github.com/froonix/acme-dns-inwx/wiki)
 
 [1]: https://letsencrypt.org/docs/client-options/
 [2]: https://github.com/srvrco/getssl
