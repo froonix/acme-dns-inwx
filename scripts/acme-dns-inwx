@@ -1,13 +1,14 @@
 #!/usr/bin/env php
 <?php
-
 /**********************************************************************
  *                                                                    *
- *  ACME-DNS-CHALLENGE WRAPPER SCRIPT (DNS TXT RECORDS) FOR INWX-API  *
+ *                           ACME-DNS-INWX                            *
  * ------------------------------------------------------------------ *
- *  v0.1.0 released at 2016-10-24 by Christian Schrötter <cs@fnx.li>  *
+ *                        v0.1.1 (2016-11-17)                         *
  *                                                                    *
- * TODO: Choose License...                                            *
+ * Author:  Christian Schrötter <cs@fnx.li>                           *
+ * License: GNU GENERAL PUBLIC LICENSE (Version 3)                    *
+ * Website: https://github.com/froonix/acme-dns-inwx                  *
  *                                                                    *
  **********************************************************************/
 
@@ -27,27 +28,52 @@ else if(PHP_SAPI !== 'cli')
 	throw new Exception('This script is for CLI execution only');
 }
 
+if(isset($argv[1]) && ($argv[1] === '--add' || $argv[1] === '--del'))
+{
+	if(isset($argv[2]) && $argv[1] == '--del')
+	{
+		# TODO: Too many args possible
+		$argv = [$argv[0], $argv[2]];
+	}
+	else if(!isset($argv[3]))
+	{
+		$argv = [$argv[0]];
+	}
+	else
+	{
+		unset($argv[1]);
+	}
+
+	$argv = array_values($argv);
+	$argc = count($argv);
+}
+
 if($argc < 2 || $argc > 3)
 {
-	print("Use the INWX-API to update a TXT-record for ACME dns-01 challenge.\n");
-	printf("Usage: %s <hostname> [<txtvalue>]\n\n", $argv[0]);
+	print("[ACME-DNS-INWX] dns-01 challenge helper script for inwx.com DNS-API\n");
+	printf("Usage: %s [--{add|del}] <hostname> [<txtvalue>]\n\n", $argv[0]);
 	print("_acme-challenge will be prepended to the hostname. Subdomains are fully supported.\n");
-	print("Without a txtvalue, the corresponding record will be deleted! TTL is set to 300.\n\n");
+	print("Without a txtvalue, the corresponding record will be deleted! TTL is set to 300.\n");
+	print("There are --add/--del arguments too. They are only supported as first argument!\n\n");
 	print("It's required to place a file called .inwx.ini in your home directory. Example configuration below:\n\n");
-	print("  username = \"your inwx username\"\n  password = \"your inwx password\"\n  secret   = \"TOTP shared secret\"\n\n");
-	print("secret is optional and only required if your account is protected by 2-factor-authentication.\n");
-	print("PHP 5.5 or newer is required, also cURL and XML-RPC modules. Take a look at the source code too.\n");
+	print("  username = \"your INWX username\"\n  password = \"your INWX password\"\n  secret   = \"TOTP shared secret\"\n\n");
+	print("secret is optional and only required if your account is protected by 2-factor-authentication.\n\n");
+	print("Required:  PHP 5.5 or newer, cURL and XML-RPC modules.\n");
+	print("BT & Wiki: https://github.com/froonix/acme-dns-inwx\n");
 	exit(1);
 }
 
 $hostname    = $argv[1];
 $recordvalue = isset($argv[2]) ? $argv[2] : null;
 
+# TODO: Read path from ENV var?
+# ...
+
 $ini = parse_ini_file($_SERVER['HOME'] . '/.inwx.ini');
 $ini['secret'] = (!isset($ini['secret'])) ? '' : $ini['secret'];
 
 // DON'T MOVE THIS PART INTO THE CLASS!
-openlog('INWX-API', LOG_PID, LOG_USER);
+openlog(strtoupper(basename(__file__)), LOG_PID, LOG_USER);
 
 $inwx = new INWX();
 $inwx->setAuthData($ini['username'], $ini['password'], $ini['secret']);
@@ -174,11 +200,11 @@ class INWX
 		}
 	}
 
-	public function setAuthData(string $username, string $password, string $secret = '')
+	public function setAuthData($username, $password, $secret = '')
 	{
-		$this->username = $username;
-		$this->password = $password;
-		$this->secret   = $secret;
+		$this->username = (string) $username;
+		$this->password = (string) $password;
+		$this->secret   = (string) $secret;
 	}
 
 	private function initializeOptions()
@@ -193,21 +219,21 @@ class INWX
 		$this->setOpt(CURLOPT_POST, true);
 	}
 
-	private function setOpt(string $key, $value)
+	private function setOpt($key, $value)
 	{
-		if(!curl_setopt($this->curl, $key, $value))
+		if(!curl_setopt($this->curl, (string) $key, $value))
 		{
 			throw new Exception('Could not set cURL option ' . $key);
 		}
 	}
 
-	public function doRequest($object, $method, $args = [], bool $return = false)
+	public function doRequest($object, $method, $args = [], $return = false)
 	{
 		// Cleanup args...
 		$safe_args = $args;
 		unset($safe_args['tan']);
 		unset($safe_args['pass']);
-		unset($safe_args['content']);
+		#unset($safe_args['content']);
 
 		// Not required, but maybe usefull to find bugs.
 		$args['clTRID'] = sprintf('FNX-%d', getmypid());
@@ -215,7 +241,7 @@ class INWX
 
 		$this->setOpt(CURLOPT_POSTFIELDS, xmlrpc_encode_request(strtolower(sprintf('%s.%s', $object, $method)), $args, ['verbosity' => 'no_white_space', 'escaping' => 'markup', 'encoding' => 'UTF-8']));
 
-		for($i = 0; $i < 3; $i++)
+		for($i = 0; $i < 5; $i++)
 		{
 			// Send action with cleaned arguments to syslog. Retries will be logged too!
 			syslog(LOG_INFO, sprintf('%s.%s: %s', $object, $method, json_encode($safe_args)));
@@ -277,7 +303,7 @@ class INWX
 				throw new Exception('Account ist locked but there is no shared secret');
 			}
 
-			for($i = 0; $i < 3; $i++)
+			for($i = 0; $i < 5; $i++)
 			{
 				try
 				{
@@ -294,7 +320,7 @@ class INWX
 					else
 					{
 						// Retry at next timeblock!
-						sleep(mt_rand(18, 23));
+						sleep(mt_rand(30, 60));
 						continue;
 					}
 				}
@@ -305,30 +331,30 @@ class INWX
 		}
 	}
 
-	public function getDomain(string $domain, bool $return = false)
+	public function getDomain($domain, $return = false)
 	{
-		return $this->doRequest('domain', 'info', ['domain' => $domain], $return);
+		return $this->doRequest('domain', 'info', ['domain' => (string) $domain], $return);
 	}
 
-	public function getRecord(string $domain, string $name, string $type, bool $return = false)
+	public function getRecord($domain, $name, $type, $return = false)
 	{
-		return $this->doRequest('nameserver', 'info', ['domain' => $domain, 'name' => $name, 'type' => $type], $return);
+		return $this->doRequest('nameserver', 'info', ['domain' => (string) $domain, 'name' => (string) $name, 'type' => (string) $type], $return);
 	}
 
-	public function createRecord(string $domain, string $name, string $type, string $content, int $ttl = 3600, bool $return = false)
+	public function createRecord($domain, $name, $type, $content, $ttl = 3600, $return = false)
 	{
-		return $this->doRequest('nameserver', 'createRecord', ['domain' => $domain, 'name' => $name, 'type' => $type, 'content' => $content, 'ttl' => $ttl], $return);
+		return $this->doRequest('nameserver', 'createRecord', ['domain' => (string) $domain, 'name' => (string) $name, 'type' => (string) $type, 'content' => (string) $content, 'ttl' => (int) $ttl], $return);
 	}
 
-	public function updateRecord(int $id, string $content, int $ttl = 3600, bool $return = false)
+	public function updateRecord($id, $content, $ttl = 3600, $return = false)
 	{
-		return $this->doRequest('nameserver', 'updateRecord', ['id' => $id, 'content' => $content, 'ttl' => $ttl], $return);
+		return $this->doRequest('nameserver', 'updateRecord', ['id' => (int) $id, 'content' => (string) $content, 'ttl' => (int) $ttl], $return);
 	}
 
-	public function deleteRecord(int $id)
+	public function deleteRecord($id)
 	{
 		// Ignore errors like "2303 Object does not exist". This could happen on retries.
-		if($this->doRequest('nameserver', 'deleteRecord', ['id' => $id], true) === false)
+		if($this->doRequest('nameserver', 'deleteRecord', ['id' => (int) $id], true) === false)
 		{
 			return false;
 		}
