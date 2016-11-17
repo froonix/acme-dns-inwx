@@ -45,9 +45,9 @@ if(isset($argv[1]) && ($argv[1] === '--add' || $argv[1] === '--del'))
 	}
 
 	$argv = array_values($argv);
+	$argc = count($argv);
 }
 
-$argc = count($argv);
 if($argc < 2 || $argc > 3)
 {
 	print("[ACME-DNS-INWX] dns-01 challenge helper script for inwx.com DNS-API\n");
@@ -233,7 +233,7 @@ class INWX
 		$safe_args = $args;
 		unset($safe_args['tan']);
 		unset($safe_args['pass']);
-		unset($safe_args['content']);
+		#unset($safe_args['content']);
 
 		// Not required, but maybe usefull to find bugs.
 		$args['clTRID'] = sprintf('FNX-%d', getmypid());
@@ -241,7 +241,7 @@ class INWX
 
 		$this->setOpt(CURLOPT_POSTFIELDS, xmlrpc_encode_request(strtolower(sprintf('%s.%s', $object, $method)), $args, ['verbosity' => 'no_white_space', 'escaping' => 'markup', 'encoding' => 'UTF-8']));
 
-		for($i = 0; $i < 3; $i++)
+		for($i = 0; $i < 5; $i++)
 		{
 			// Send action with cleaned arguments to syslog. Retries will be logged too!
 			syslog(LOG_INFO, sprintf('%s.%s: %s', $object, $method, json_encode($safe_args)));
@@ -303,7 +303,7 @@ class INWX
 				throw new Exception('Account ist locked but there is no shared secret');
 			}
 
-			for($i = 0; $i < 3; $i++)
+			for($i = 0; $i < 5; $i++)
 			{
 				try
 				{
@@ -320,7 +320,7 @@ class INWX
 					else
 					{
 						// Retry at next timeblock!
-						sleep(mt_rand(18, 23));
+						sleep(mt_rand(30, 60));
 						continue;
 					}
 				}
