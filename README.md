@@ -28,6 +28,8 @@ Take a look at the wiki for more examples.
 ## Bugs? Feedback?
 Open a new issue or drop me a line at cs@fnx.li! :-)
 
+*Important: This project is **not** affiliated to INWX GmbH!*
+
 ## Important links...
 * [INWX API](https://www.inwx.com/en/offer/api)
 * [Bugtracker](https://github.com/froonix/acme-dns-inwx/issues)
