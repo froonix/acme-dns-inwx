@@ -33,7 +33,7 @@ Important: This project is **not** affiliated with INWX GmbH!
 ## Important links...
 * [Bugtracker](https://github.com/froonix/acme-dns-inwx/issues)
 * [Wiki pages](https://github.com/froonix/acme-dns-inwx/wiki)
-* [INWX API](https://www.inwx.com/en/offer/api)
+* [INWX DNS API](https://www.inwx.com/en/offer/api)
 * [Let's Encrypt](https://letsencrypt.org/)
 
 [1]: https://letsencrypt.org/docs/client-options/
