@@ -11,7 +11,7 @@ shared secret. Don't forget to check file permissions! (recommended: 0600)
 
 Run it for the first time:
 
-```
+```bash
 # Add the TXT record _acme-challenge.example.com
 # with value "test" and set TTL to 300 seconds:
 ./scripts/acme-dns-inwx example.com test
