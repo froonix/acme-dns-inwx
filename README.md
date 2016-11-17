@@ -6,8 +6,8 @@ Developed for [GetSSL][2], tested at Debian and Ubuntu.
 Download or clone the archive and extract it to a new folder.
 
 Copy the example config file `config/.inwx.ini` to `~/.inwx.ini` and
-change username/password to your values. If enabled, enter your TOTP/2FA
-shared secret. Don't forget to check file permissions! (recommended: 0600)
+insert your credentials. If enabled, enter your TOTP/2FA shared secret.
+Don't forget to check file permissions! (recommended: 0600)
 
 Run it for the first time:
 
