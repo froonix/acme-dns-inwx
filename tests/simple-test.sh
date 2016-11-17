@@ -70,7 +70,7 @@ do
 
 	# Try to delete the DNS record.
 	status "${YELLOW}DEL RR${RESET}" "$hostname"
-	return=0; exec "$SCRIPT" "$hostname" 1>/dev/null 2>>"$logfile" || return=$? && :
+	return=0; "$SCRIPT" "$hostname" 1>/dev/null 2>>"$logfile" || return=$? && :
 
 	if [[ "$return" != "0" ]]
 	then
