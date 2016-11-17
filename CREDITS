@@ -1,0 +1,5 @@
+Base32 encoder/decoder: Bryan Ruiz <bryan@bryanruiz.com>
+http://php.net/manual/de/function.base-convert.php#102232
+
+API inspiration: INWX GmbH & Co. KG
+https://github.com/inwx/php-client
