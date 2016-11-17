@@ -29,6 +29,7 @@ Take a look at the wiki for more examples.
 Open a new issue or drop me a line at cs@fnx.li! :-)
 
 ## Important links...
+* [INWX API](https://www.inwx.com/en/offer/api)
 * [Bugtracker](https://github.com/froonix/acme-dns-inwx/issues)
 * [Wiki pages](https://github.com/froonix/acme-dns-inwx/wiki)
 
