@@ -2,6 +2,8 @@
 Simple helper script for various [Let's Encrypt][1] clients.
 Developed for [GetSSL][2], tested at Debian and Ubuntu.
 
+**NO WILDCARD SUPPORT VIA ACMEv2!** (see issue [#12][1012])
+
 ## Initial setup
 Download or clone the archive and extract it to a new folder.
 
@@ -38,3 +40,5 @@ Important: This project is **not** affiliated with INWX GmbH!
 
 [1]: https://letsencrypt.org/docs/client-options/
 [2]: https://github.com/srvrco/getssl
+
+[1012]: https://github.com/froonix/acme-dns-inwx/issues/12
