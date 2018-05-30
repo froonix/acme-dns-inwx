@@ -4,7 +4,7 @@
  *                                                                    *
  *                           ACME-DNS-INWX                            *
  * ------------------------------------------------------------------ *
- *                        v0.1.2 (2018-05-26)                         *
+ *                        v0.1.3 (2018-05-30)                         *
  *                                                                    *
  * Author:  Christian Schrötter <cs@fnx.li>                           *
  * License: GNU GENERAL PUBLIC LICENSE (Version 3)                    *
@@ -63,7 +63,7 @@ if($argc < 2 || $argc > 3)
 	exit(1);
 }
 
-$hostname    = $argv[1];
+$hostname    = strtolower($argv[1]);
 $recordvalue = isset($argv[2]) ? $argv[2] : null;
 
 # TODO: Read path from ENV var?
@@ -228,6 +228,8 @@ class INWX
 
 		if($_)
 		{
+			clearstatcache();
+
 			if(!file_exists($this->persistent))
 			{
 				if(!touch($this->persistent))
@@ -250,16 +252,23 @@ class INWX
 		}
 		else
 		{
-			if($this->persistent && file_exists($this->persistent))
-			{
-				unlink($this->persistent);
-			}
-
-			$this->persistent = false;
-			$this->setOpt(CURLOPT_COOKIEJAR, '');
-			$this->setOpt(CURLOPT_COOKIEFILE, '');
-			$this->setOpt(CURLOPT_COOKIESESSION, true);
+			$this->destroySessionStorage();
 		}
+	}
+
+	private function destroySessionStorage()
+	{
+		clearstatcache();
+
+		if($this->persistent && file_exists($this->persistent))
+		{
+			unlink($this->persistent);
+		}
+
+		$this->persistent = false;
+		$this->setOpt(CURLOPT_COOKIEJAR, '');
+		$this->setOpt(CURLOPT_COOKIEFILE, '');
+		$this->setOpt(CURLOPT_COOKIESESSION, true);
 	}
 
 	public function setAuthData($username, $password, $secret = '')
@@ -301,7 +310,8 @@ class INWX
 
 		$this->setOpt(CURLOPT_POSTFIELDS, xmlrpc_encode_request(strtolower(sprintf('%s.%s', $object, $method)), $args, ['verbosity' => 'no_white_space', 'escaping' => 'markup', 'encoding' => 'UTF-8']));
 
-		for($i = 0; $i < 5; $i++)
+		#for($i = 0; $i < 5; $i++)
+		for($i = 0; $i < 1; $i++)
 		{
 			// Send action with cleaned arguments to syslog. Retries will be logged too!
 			syslog(LOG_INFO, sprintf('%s.%s: %s', $object, $method, json_encode($safe_args)));
@@ -327,7 +337,6 @@ class INWX
 		}
 
 		$result = xmlrpc_decode($result, 'UTF-8');
-		#sleep(mt_rand(3, 8)); // <-- required?
 
 		if($return && $result['code'] === 2303)
 		{
@@ -350,31 +359,25 @@ class INWX
 	private function logout()
 	{
 		$this->doRequest('account', 'logout');
+		$this->destroySessionStorage();
 	}
 
 	public function login()
 	{
-		if($this->persistent)
+		clearstatcache();
+
+		if($this->persistent && file_exists($this->persistent) && filesize($this->persistent))
 		{
 			try
 			{
-				$this->doRequest('account', 'info');
+				#$this->doRequest('account', 'info');
+				$this->doRequest('message', 'poll');
 				return;
 			}
 			catch(RuntimeException $e)
 			{
 				# TODO: Check for code 2002?
 				# ...
-
-				try
-				{
-					$this->logout();
-				}
-				catch(Exception $e)
-				{
-					// Ignore all errors, it does not matter.
-					// Otherwise we would get strange errors!
-				}
 
 				$this->resetSessionStorage();
 			}

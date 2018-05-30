@@ -4,7 +4,8 @@
 # First simple test script for ACME-DNS-INWX. #
 # Try to add and delete 100 random records.   #
 #                                             #
-# Example: simple-test.sh fnx.li ns1.fnx.li   #
+# Example: simple-test.sh example.org \       #
+#                     ns.domrobot.com         #
 #                                             #
 ###############################################
 
@@ -13,7 +14,7 @@ cd "$(dirname "$(readlink -f "$0")")"
 
 DOMAIN=${1-}; NS=${2-DEFAULT}
 SCRIPT=${3-../scripts/acme-dns-inwx}
-WAIT_DNS=60; WAIT_CACHE=301; WAIT_NEXT=10
+WAIT_TRIES=100; WAIT_DNS=12; WAIT_NEXT=5
 CHALLENGE_PREFIX="_acme-challenge"
 
 if [[ "$DOMAIN" == "" ]]; then echo "Usage: $0 <domain> [<primary-nameserver> [<path-to-script>]]" 1>&2; exit 1
@@ -54,15 +55,22 @@ do
 		continue
 	fi
 
-	# Wait for the primary NS to update its zone...
-	status "${YELLOW}WAIT#1${RESET}" "$hostname"
-	sleep "$WAIT_DNS"
+	final=-1
+	for((w=1; w<=WAIT_TRIES; w++))
+	do
+		# Wait for the primary NS to update its zone...
+		status "${YELLOW}WAIT#1${RESET}" "$hostname" "($w/$WAIT_TRIES)                             "
+		sleep "$WAIT_DNS"
 
-	# Check the DNS record.
-	status "${YELLOW}CHK #1${RESET}" "$hostname"
-	return=0; dig +short "TXT" "$CHALLENGE_PREFIX.$hostname" "$NS" 1>"$tmpfile" 2>/dev/null || return=$? && :
+		# Check the DNS record.
+		status "${YELLOW}CHK #1${RESET}" "$hostname"
+		return=0; dig +short "TXT" "$CHALLENGE_PREFIX.$hostname" "$NS" 1>"$tmpfile" 2>/dev/null || return=$? && :
 
-	if [[ "$return" != "0" || "$(cat "$tmpfile")" != "\"$txtvalue\"" ]]
+		if [[ "$return" == "0" && "$(cat "$tmpfile")" == "\"$txtvalue\"" ]]
+		then final=0; break; else final=1; fi
+	done
+
+	if [[ "$final" != "0" ]]
 	then
 		status "${RED}CHK #1${RESET}" "$hostname" "Failed!  (value not found in DNS)"
 		continue
@@ -78,22 +86,29 @@ do
 		continue
 	fi
 
-	# Wait for the DNS cache to expire...
-	status "${YELLOW}WAIT#2${RESET}" "$hostname"
-	sleep "$WAIT_CACHE"
+	final=-1
+	for((w=1; w<=WAIT_TRIES; w++))
+	do
+		# Wait for the DNS cache to expire...
+		status "${YELLOW}WAIT#2${RESET}" "$hostname" "($w/$WAIT_TRIES)                             "
+		sleep "$WAIT_DNS"
 
-	# Check the DNS record.
-	status "${YELLOW}CHK #2${RESET}" "$hostname"
-	return=0; dig +short "TXT" "$CHALLENGE_PREFIX.$hostname" "${NS}" 1>"$tmpfile" 2>/dev/null || return=$? && :
+		# Check the DNS record.
+		status "${YELLOW}CHK #2${RESET}" "$hostname"
+		return=0; dig +short "TXT" "$CHALLENGE_PREFIX.$hostname" "${NS}" 1>"$tmpfile" 2>/dev/null || return=$? && :
 
-	if [[ "$return" != "0" || "$(cat "$tmpfile")" != "" ]]
+		if [[ "$return" == "0" && "$(cat "$tmpfile")" == "" ]]
+		then final=0; break; else final=1; fi
+	done
+
+	if [[ "$final" != "0" ]]
 	then
 		status "${RED}CHK #2${RESET}" "$hostname" "Failed!  (record still exists)"
 		continue
 	fi
 
 	# Wait for the next test run...
-	status "${GREEN}  OK  ${RESET}" "$hostname" "Success!"
+	status "${GREEN}  OK  ${RESET}" "$hostname" "Success!                          "
 	sleep "$WAIT_NEXT"
 
 done
