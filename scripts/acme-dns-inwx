@@ -4,7 +4,7 @@
  *                                                                    *
  *                           ACME-DNS-INWX                            *
  * ------------------------------------------------------------------ *
- *                        v0.1.3 (2018-05-30)                         *
+ *                        v0.2.0 (2018-06-01)                         *
  *                                                                    *
  * Author:  Christian Schrötter <cs@fnx.li>                           *
  * License: GNU GENERAL PUBLIC LICENSE (Version 3)                    *
@@ -28,43 +28,67 @@ else if(PHP_SAPI !== 'cli')
 	throw new Exception('This script is for CLI execution only');
 }
 
-if(isset($argv[1]) && ($argv[1] === '--add' || $argv[1] === '--del'))
-{
-	if(isset($argv[2]) && $argv[1] == '--del')
-	{
-		# TODO: Too many args possible
-		$argv = [$argv[0], $argv[2]];
-	}
-	else if(!isset($argv[3]))
-	{
-		$argv = [$argv[0]];
-	}
-	else
-	{
-		unset($argv[1]);
-	}
+$mode = null;
+$base = array_shift($argv);
 
-	$argv = array_values($argv);
-	$argc = count($argv);
+if(isset($argv[0]) && substr($argv[0], 0, 2) === '--')
+{
+	$_ = substr(array_shift($argv), 2);
+	if(in_array($_, ['add', 'del']))
+	{
+		$mode = $_;
+		unset($_);
+	}
+}
+else if(isset($argv[1]))
+{
+	$mode = 'add';
+}
+else if(isset($argv[0]))
+{
+	$mode = 'del';
 }
 
-if($argc < 2 || $argc > 3)
+$hostname    = array_shift($argv);
+$recordvalue = array_shift($argv);
+
+if(count($argv))
+{
+	$mode = null;
+}
+
+if($mode === null || ($mode === 'add' && ($hostname === null || $recordvalue === null)) || ($mode === 'del' && $hostname === null))
 {
 	print("[ACME-DNS-INWX] dns-01 challenge helper script for inwx.com DNS-API\n");
-	printf("Usage: %s [--{add|del}] <hostname> [<txtvalue>]\n\n", $argv[0]);
+	printf("Usage: %s [--{add|del}] <hostname> [<txtvalue>]\n\n", $base);
 	print("_acme-challenge will be prepended to the hostname. Subdomains are fully supported.\n");
-	print("Without a txtvalue, the corresponding record will be deleted! TTL is set to 300.\n");
-	print("There are --add/--del arguments too. They are only supported as first argument!\n\n");
+	print("Without a txtvalue, the corresponding record will be deleted! TTL is set to 300.\n\n");
+	print("There are --add/--del arguments too. They are only supported as first argument!\n");
+	print("Calling --del without a txtvalue removes all records for the challenge hostname.\n\n");
 	print("It's required to place a file called .inwx.ini in your home directory. Example configuration below:\n\n");
 	print("  username   = \"your INWX username\"\n  password   = \"your INWX password\"\n  secret     = \"TOTP shared secret\"\n  persistent = <true|false>\n\n");
 	print("secret is optional and only required if your account is protected by 2-factor-authentication.\n\n");
 	print("Required:  PHP 5.5 or newer, cURL and XML-RPC modules.\n");
-	print("BT & Wiki: https://github.com/froonix/acme-dns-inwx\n");
+	print("BT & Wiki: https://github.com/froonix/acme-dns-inwx\n\n");
+	print("Usage examples:\n\n");
+	print("  # Add TXT record _acme-challenge.example.org with content \"123\"\n");
+	printf("  %s example.org 123\n\n", $base);
+	print("  # Add TXT record _acme-challenge.example.org with content \"123\"\n");
+	printf("  %s --add example.org 123\n\n", $base);
+	print("  # Delete TXT record _acme-challenge.example.org with content \"123\"\n");
+	printf("  %s --del example.org 123\n\n", $base);
+	print("  # Delete all TXT records for _acme-challenge.example.org\n");
+	printf("  %s --del example.org\n\n", $base);
+	print("  # Delete all TXT records for _acme-challenge.example.org\n");
+	printf("  %s example.org\n\n", $base);
 	exit(1);
 }
 
-$hostname    = strtolower($argv[1]);
-$recordvalue = isset($argv[2]) ? $argv[2] : null;
+$hostname = strtolower($hostname);
+if(substr($hostname, 0, 16) === '_acme-challenge.')
+{
+	$hostname = substr($hostname, 16);
+}
 
 # TODO: Read path from ENV var?
 # ...
@@ -103,48 +127,15 @@ if($recordname === null)
 	throw new Exception(sprintf('Domain %s does not exist in this account', $hostname));
 }
 
-// Check if the record exists. The ID is required for update/delete.
-$record = $inwx->getRecord($fulldomain, $recordname, 'TXT', true);
-
-if($recordvalue === null)
+if($mode === 'add')
 {
-	if(isset($record['record'][0]))
-	{
-		if(count($record['record']) > 1)
-		{
-			// There are multiple records! This is strange, but we can delete all of them.
-			fwrite(STDERR, "Warning: Multiple records found! Deleting all of them.\n");
-			$inwx->deleteRecords(array_column($record['record'], 'id'));
-		}
-		else
-		{
-			// The record exists, we can delete it now.
-			$inwx->deleteRecord($record['record'][0]['id']);
-		}
-	}
+	// We don't care if the record already exists. This is required for ACMEv2!
+	$inwx->createRecord($fulldomain, $recordname, 'TXT', $recordvalue, 300);
 }
-else
+else if(($result = $inwx->getRecord($fulldomain, $recordname, 'TXT', $recordvalue, null, true)) && isset($result['record']))
 {
-	if(isset($record['record']) && count($record['record']) > 1)
-	{
-		// There are multiple records! This is strange. Because we can't update
-		// all of them, let's delete it first and create a new one afterwards.
-		fwrite(STDERR, "Warning: Multiple records found! Deleting all of them.\n");
-		fwrite(STDERR, "         A new TXT record will be created afterwards.\n");
-		$inwx->deleteRecords(array_column($record['record'], 'id'));
-		$record = false;
-	}
-
-	if($record === false || !isset($record['record'][0]))
-	{
-		// The record does not exist. We have to create it with challenge data.
-		$inwx->createRecord($fulldomain, $recordname, 'TXT', $recordvalue, 300);
-	}
-	else
-	{
-		// The record already exists. Let's update the challenge data.
-		$inwx->updateRecord($record['record'][0]['id'], $recordvalue, 300);
-	}
+	// One or multiple records found. We can delete all of them.
+	$inwx->deleteRecords(array_column($result['record'], 'id'));
 }
 
 // Close API...
@@ -308,32 +299,14 @@ class INWX
 		$args['clTRID'] = sprintf('FNX-%d', getmypid());
 		$args['lang']   = 'en';
 
+		// Send action with cleaned arguments to syslog.
+		syslog(LOG_INFO, sprintf('%s.%s: %s', $object, $method, json_encode($safe_args)));
+
 		$this->setOpt(CURLOPT_POSTFIELDS, xmlrpc_encode_request(strtolower(sprintf('%s.%s', $object, $method)), $args, ['verbosity' => 'no_white_space', 'escaping' => 'markup', 'encoding' => 'UTF-8']));
 
-		#for($i = 0; $i < 5; $i++)
-		for($i = 0; $i < 1; $i++)
+		if(($result = curl_exec($this->curl)) === false)
 		{
-			// Send action with cleaned arguments to syslog. Retries will be logged too!
-			syslog(LOG_INFO, sprintf('%s.%s: %s', $object, $method, json_encode($safe_args)));
-
-			if(($result = curl_exec($this->curl)) === false)
-			{
-				$error = curl_error($this->curl);
-				$errno = curl_errno($this->curl);
-
-				if($i == 2 || $errno != CURLE_OPERATION_TIMEOUTED)
-				{
-					// Ok, this is a real error, let's quit...
-					throw new RuntimeException($error, $errno);
-				}
-
-				// Retry again later!
-				sleep(mt_rand(15, 45));
-				continue;
-			}
-
-			// Done!
-			break;
+			throw new RuntimeException(curl_error($this->curl), curl_errno($this->curl));
 		}
 
 		$result = xmlrpc_decode($result, 'UTF-8');
@@ -370,15 +343,11 @@ class INWX
 		{
 			try
 			{
-				#$this->doRequest('account', 'info');
 				$this->doRequest('message', 'poll');
 				return;
 			}
 			catch(RuntimeException $e)
 			{
-				# TODO: Check for code 2002?
-				# ...
-
 				$this->resetSessionStorage();
 			}
 		}
@@ -425,14 +394,56 @@ class INWX
 		return $this->doRequest('domain', 'info', ['domain' => (string) $domain], $return);
 	}
 
-	public function getRecord($domain, $name, $type, $return = false)
+	public function getRecord($domain, $name, $type, $content = null, $ttl = null, $return = false)
 	{
-		return $this->doRequest('nameserver', 'info', ['domain' => (string) $domain, 'name' => (string) $name, 'type' => (string) $type], $return);
+		$args = [
+			'domain' => (string) $domain,
+			'name'   => (string) $name,
+			'type'   => (string) $type,
+		];
+
+		if(is_string($content))
+		{
+			$args['content'] = $content;
+		}
+
+		if($ttl)
+		{
+			$args['ttl'] = (int) $ttl;
+		}
+
+		return $this->doRequest('nameserver', 'info', $args, $return);
 	}
 
 	public function createRecord($domain, $name, $type, $content, $ttl = 3600, $return = false)
 	{
-		return $this->doRequest('nameserver', 'createRecord', ['domain' => (string) $domain, 'name' => (string) $name, 'type' => (string) $type, 'content' => (string) $content, 'ttl' => (int) $ttl], $return);
+		try
+		{
+			return $this->doRequest('nameserver', 'createRecord', ['domain' => (string) $domain, 'name' => (string) $name, 'type' => (string) $type, 'content' => (string) $content, 'ttl' => (int) $ttl], $return);
+		}
+		catch(RuntimeException $e)
+		{
+			if($e->getCode() === 2302)
+			{
+				$result = $this->getRecord($domain, $name, $type, $content, $ttl, true);
+
+				if(isset($result['record'][1]))
+				{
+					throw new Exception('Too many objects in reply');
+				}
+				else if(isset($result['record'][0]['id']))
+				{
+					return ['id' => (int) $result['record'][0]['id']];
+				}
+			}
+
+			if(!$return)
+			{
+				throw $e;
+			}
+		}
+
+		return false;
 	}
 
 	public function updateRecord($id, $content, $ttl = 3600, $return = false)
@@ -442,10 +453,19 @@ class INWX
 
 	public function deleteRecord($id)
 	{
-		// Ignore errors like "2303 Object does not exist". This could happen on retries.
-		if($this->doRequest('nameserver', 'deleteRecord', ['id' => (int) $id], true) === false)
+		try
 		{
-			return false;
+			if($this->doRequest('nameserver', 'deleteRecord', ['id' => (int) $id], true) === false)
+			{
+				return false;
+			}
+		}
+		catch(RuntimeException $e)
+		{
+			if($e->getCode() !== 2303)
+			{
+				throw $e;
+			}
 		}
 
 		return true;

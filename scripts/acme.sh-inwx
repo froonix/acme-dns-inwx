@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+dns_fnx_inwx_add()
+{
+	"$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/acme-dns-inwx" --add "$1" "$2"
+}
+
+dns_fnx_inwx_rm()
+{
+	"$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/acme-dns-inwx" --del "$1" "$2"
+}
