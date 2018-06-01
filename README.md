@@ -40,5 +40,3 @@ Important: This project is **not** affiliated with INWX GmbH!
 [1]: https://letsencrypt.org/docs/client-options/
 [2]: https://github.com/srvrco/getssl
 [3]: https://github.com/Neilpang/acme.sh
-
-[1012]: https://github.com/froonix/acme-dns-inwx/issues/12
