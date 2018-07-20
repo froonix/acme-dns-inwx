@@ -19,9 +19,9 @@ if(version_compare(PHP_VERSION, '5.5.0', '<'))
 {
 	throw new Exception('PHP 5.5.0 or newer is required');
 }
-else if(!extension_loaded('curl') || !extension_loaded('xmlrpc'))
+else if(!extension_loaded('curl') || !extension_loaded('xmlrpc') || !extension_loaded('json'))
 {
-	throw new Exception('Required modules not found: cURL and XML-RPC');
+	throw new Exception('Required modules not found: cURL, JSON and XML-RPC');
 }
 else if(PHP_SAPI !== 'cli')
 {
