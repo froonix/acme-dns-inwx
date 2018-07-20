@@ -68,7 +68,7 @@ if($mode === null || ($mode === 'add' && ($hostname === null || $recordvalue ===
 	print("It's required to place a file called .inwx.ini in your home directory. Example configuration below:\n\n");
 	print("  username   = \"your INWX username\"\n  password   = \"your INWX password\"\n  secret     = \"TOTP shared secret\"\n  persistent = <true|false>\n\n");
 	print("secret is optional and only required if your account is protected by 2-factor-authentication.\n\n");
-	print("Required:  PHP 5.5 or newer, cURL and XML-RPC modules.\n");
+	print("Required:  PHP 5.5 or newer and cURL/JSON/XML-RPC modules.\n");
 	print("BT & Wiki: https://github.com/froonix/acme-dns-inwx\n\n");
 	print("Usage examples:\n\n");
 	print("  # Add TXT record _acme-challenge.example.org with content \"123\"\n");
