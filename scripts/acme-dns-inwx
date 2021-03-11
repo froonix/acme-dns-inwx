@@ -81,8 +81,9 @@ if($mode === null || ($mode === 'add' && ($hostname === null || $recordvalue ===
 	print("It's required to place a file called .inwx.ini in your home directory. Example configuration below:\n\n");
 	print("  username   = \"your INWX username\"\n  password   = \"your INWX password\"\n  secret     = \"TOTP shared secret\"\n  persistent = <true|false>\n\n");
 	print("secret is optional and only required if your account is protected by 2-factor-authentication.\n\n");
-	print("Required:  PHP 5.5 or newer and cURL/JSON/XML-RPC modules.\n");
-	print("BT & Wiki: https://github.com/froonix/acme-dns-inwx\n\n");
+	print("Required:    PHP 5.5 or newer and cURL/JSON/XML-RPC extensions.\n");
+	print("Recommended: PHP INTL extension for IDN (Punycode) support.\n");
+	print("BT & Wiki:   https://github.com/froonix/acme-dns-inwx\n\n");
 	print("Usage examples:\n\n");
 	print("  # Add TXT record _acme-challenge.example.org with content \"123\"\n");
 	printf("  %s example.org 123\n\n", $base);
@@ -191,6 +192,22 @@ exit(0);
 ########################################################################
 #                            EXTERNAL LIBS                             #
 ########################################################################
+
+function idn_to_utf8_wrapper($domain)
+{
+	$domain = (string) $domain;
+
+	if(!function_exists('idn_to_utf8'))
+	{
+		return $domain;
+	}
+	else if(defined('INTL_IDNA_VARIANT_UTS46'))
+	{
+		return idn_to_utf8($domain, IDNA_DEFAULT, INTL_IDNA_VARIANT_UTS46);
+	}
+
+	return idn_to_utf8($domain);
+}
 
 // Convert PHP errors to exceptions. This is very usefull!
 function error_handler($severity, $message, $file, $line)
@@ -435,16 +452,16 @@ class INWX
 
 	public function getDomain($domain, $return = false)
 	{
-		return $this->doRequest('domain', 'info', ['domain' => (string) $domain], $return);
+		return $this->doRequest('domain', 'info', ['domain' => idn_to_utf8_wrapper($domain)], $return);
 	}
 
 	public function getRecord($domain, $name = null, $type = null, $content = null, $ttl = null, $return = false)
 	{
-		$args = ['domain' => (string) $domain];
+		$args = ['domain' => idn_to_utf8_wrapper($domain)];
 
 		if(is_string($name))
 		{
-			$args['name'] = $name;
+			$args['name'] = idn_to_utf8_wrapper($name);
 		}
 
 		if(is_string($type))
@@ -481,7 +498,7 @@ class INWX
 	{
 		try
 		{
-			return $this->doRequest('nameserver', 'createRecord', ['domain' => (string) $domain, 'name' => (string) $name, 'type' => (string) $type, 'content' => (string) $content, 'ttl' => (int) $ttl], $return);
+			return $this->doRequest('nameserver', 'createRecord', ['domain' => idn_to_utf8_wrapper($domain), 'name' => idn_to_utf8_wrapper($name), 'type' => (string) $type, 'content' => (string) $content, 'ttl' => (int) $ttl], $return);
 		}
 		catch(RuntimeException $e)
 		{
