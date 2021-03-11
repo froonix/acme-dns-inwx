@@ -4,7 +4,7 @@
  *                                                                    *
  *                           ACME-DNS-INWX                            *
  * ------------------------------------------------------------------ *
- *                        v0.2.1 (2018-07-21)                         *
+ *                      v0.2.2-DEV (XXXX-XX-XX)                       *
  *                                                                    *
  * Author:  Christian Schrötter <cs@fnx.li>                           *
  * License: GNU GENERAL PUBLIC LICENSE (Version 3)                    *
@@ -34,11 +34,11 @@ $base = array_shift($argv);
 if(isset($argv[0]) && substr($argv[0], 0, 2) === '--')
 {
 	$_ = substr(array_shift($argv), 2);
-	if(in_array($_, ['add', 'del']))
+	if(in_array($_, ['add', 'del', 'cleanup'], true))
 	{
 		$mode = $_;
-		unset($_);
 	}
+	unset($_);
 }
 else if(isset($argv[1]))
 {
@@ -49,18 +49,31 @@ else if(isset($argv[0]))
 	$mode = 'del';
 }
 
-$hostname    = array_shift($argv);
-$recordvalue = array_shift($argv);
-
-if(count($argv))
+if($mode === 'cleanup')
 {
-	$mode = null;
+	$domains = $argv;
+
+	if(!count($domains))
+	{
+		$mode = null;
+	}
+}
+else
+{
+	$hostname    = array_shift($argv);
+	$recordvalue = array_shift($argv);
+
+	if(count($argv))
+	{
+		$mode = null;
+	}
 }
 
 if($mode === null || ($mode === 'add' && ($hostname === null || $recordvalue === null)) || ($mode === 'del' && $hostname === null))
 {
 	print("[ACME-DNS-INWX] dns-01 challenge helper script for inwx.com DNS-API\n");
-	printf("Usage: %s [--{add|del}] <hostname> [<txtvalue>]\n\n", $base);
+	printf("Usage: %s [--{add|del}] <hostname> [<txtvalue>]\n", $base);
+	printf("       %s --cleanup <domain> ...\n\n", $base);
 	print("_acme-challenge will be prepended to the hostname. Subdomains are fully supported.\n");
 	print("Without a txtvalue, the corresponding record will be deleted! TTL is set to 300.\n\n");
 	print("There are --add/--del arguments too. They are only supported as first argument!\n");
@@ -81,13 +94,18 @@ if($mode === null || ($mode === 'add' && ($hostname === null || $recordvalue ===
 	printf("  %s --del example.org\n\n", $base);
 	print("  # Delete all TXT records for _acme-challenge.example.org\n");
 	printf("  %s example.org\n\n", $base);
+	print("  # Delete all challenge records at example.org (incl. subdomains)\n");
+	printf("  %s --cleanup example.org\n\n", $base);
 	exit(1);
 }
 
-$hostname = strtolower($hostname);
-if(substr($hostname, 0, 16) === '_acme-challenge.')
+if($mode !== 'cleanup')
 {
-	$hostname = substr($hostname, 16);
+	$hostname = strtolower($hostname);
+	if(substr($hostname, 0, 16) === '_acme-challenge.')
+	{
+		$hostname = substr($hostname, 16);
+	}
 }
 
 # TODO: Read path from ENV var?
@@ -105,37 +123,63 @@ $inwx->setAuthData($ini['username'], $ini['password'], $ini['secret']);
 $inwx->setSessionStorage($ini['persistent']);
 $inwx->login();
 
-// Split domain name to subdomains.
-$hostparts = explode('.', $hostname);
-$fulldomain = array_pop($hostparts);
-$recordname = null;
-
-while(($nextpart = array_pop($hostparts)) !== null)
+if($mode === 'cleanup')
 {
-	$fulldomain = sprintf('%s.%s', $nextpart, $fulldomain);
-	if(($domain = $inwx->getDomain($fulldomain, true)) !== false)
+	$deleted = 0;
+	foreach($domains as $domain)
 	{
-		// We found the domain! Prepend challenge name.
-		array_unshift($hostparts, '_acme-challenge');
-		$recordname = implode('.', $hostparts);
-		break;
+		$result = $inwx->getRecord($domain, null, 'TXT');
+
+		if(isset($result['record']) && ($c = count($result['record'])))
+		{
+			for($i = 0; $i < $c; $i++)
+			{
+				if(preg_match('/^_acme-challenge(\..+|$)/', $result['record'][$i]['name']))
+				{
+					printf("Deleting TXT record for %s: %s\n", $result['record'][$i]['name'], $result['record'][$i]['content']);
+					$inwx->deleteRecord((int) $result['record'][$i]['id']);
+					$deleted++;
+				}
+			}
+		}
 	}
-}
 
-if($recordname === null)
-{
-	throw new Exception(sprintf('Domain %s does not exist in this account', $hostname));
+	printf("%s%d ACME TXT record(s) deleted!\n", ($deleted ? "\n" : ""), $deleted);
 }
+else
+{
+	// Split domain name to subdomains.
+	$hostparts = explode('.', $hostname);
+	$fulldomain = array_pop($hostparts);
+	$recordname = null;
 
-if($mode === 'add')
-{
-	// We don't care if the record already exists. This is required for ACMEv2!
-	$inwx->createRecord($fulldomain, $recordname, 'TXT', $recordvalue, 300);
-}
-else if(($result = $inwx->getRecord($fulldomain, $recordname, 'TXT', $recordvalue, null, true)) && isset($result['record']))
-{
-	// One or multiple records found. We can delete all of them.
-	$inwx->deleteRecords(array_column($result['record'], 'id'));
+	while(($nextpart = array_pop($hostparts)) !== null)
+	{
+		$fulldomain = sprintf('%s.%s', $nextpart, $fulldomain);
+		if(($domain = $inwx->getDomain($fulldomain, true)) !== false)
+		{
+			// We found the domain! Prepend challenge name.
+			array_unshift($hostparts, '_acme-challenge');
+			$recordname = implode('.', $hostparts);
+			break;
+		}
+	}
+
+	if($recordname === null)
+	{
+		throw new Exception(sprintf('Domain %s does not exist in this account', $hostname));
+	}
+
+	if($mode === 'add')
+	{
+		// We don't care if the record already exists. This is required for ACMEv2!
+		$inwx->createRecord($fulldomain, $recordname, 'TXT', $recordvalue, 300);
+	}
+	else if(($result = $inwx->getRecord($fulldomain, $recordname, 'TXT', $recordvalue, null, true)) && isset($result['record']))
+	{
+		// One or multiple records found. We can delete all of them.
+		$inwx->deleteRecords(array_column($result['record'], 'id'));
+	}
 }
 
 // Close API...
@@ -394,13 +438,19 @@ class INWX
 		return $this->doRequest('domain', 'info', ['domain' => (string) $domain], $return);
 	}
 
-	public function getRecord($domain, $name, $type, $content = null, $ttl = null, $return = false)
+	public function getRecord($domain, $name = null, $type = null, $content = null, $ttl = null, $return = false)
 	{
-		$args = [
-			'domain' => (string) $domain,
-			'name'   => (string) $name,
-			'type'   => (string) $type,
-		];
+		$args = ['domain' => (string) $domain];
+
+		if(is_string($name))
+		{
+			$args['name'] = $name;
+		}
+
+		if(is_string($type))
+		{
+			$args['type'] = $type;
+		}
 
 		if(is_string($content))
 		{
@@ -412,7 +462,19 @@ class INWX
 			$args['ttl'] = (int) $ttl;
 		}
 
-		return $this->doRequest('nameserver', 'info', $args, $return);
+		try
+		{
+			return $this->doRequest('nameserver', 'info', $args, $return);
+		}
+		catch(RuntimeException $e)
+		{
+			if($e->getCode() !== 2303)
+			{
+				throw $e;
+			}
+
+			return false;
+		}
 	}
 
 	public function createRecord($domain, $name, $type, $content, $ttl = 3600, $return = false)
