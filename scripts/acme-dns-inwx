@@ -348,7 +348,7 @@ class INWX
 
 	private function initializeOptions()
 	{
-		$this->setOpt(CURLOPT_TIMEOUT, 30);
+		$this->setOpt(CURLOPT_TIMEOUT, 90);
 		$this->setOpt(CURLOPT_RETURNTRANSFER, true);
 		$this->setOpt(CURLOPT_SSL_VERIFYPEER, true);
 		$this->setOpt(CURLOPT_HTTPHEADER, ['Content-Type: text/xml']);
