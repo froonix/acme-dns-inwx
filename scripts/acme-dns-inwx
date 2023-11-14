@@ -4,7 +4,7 @@
  *                                                                    *
  *                           ACME-DNS-INWX                            *
  * ------------------------------------------------------------------ *
- *                      v0.2.2-DEV (XXXX-XX-XX)                       *
+ *                      v0.3.0-DEV (XXXX-XX-XX)                       *
  *                                                                    *
  * Author:  Christian Schrötter <cs@fnx.li>                           *
  * License: GNU GENERAL PUBLIC LICENSE (Version 3)                    *
@@ -19,9 +19,9 @@ if(version_compare(PHP_VERSION, '5.5.0', '<'))
 {
 	throw new Exception('PHP 5.5.0 or newer is required');
 }
-else if(!extension_loaded('curl') || !extension_loaded('json') || !extension_loaded('xmlrpc'))
+else if(!extension_loaded('curl') || !extension_loaded('json'))
 {
-	throw new Exception('Required modules not found: cURL, JSON and XML-RPC');
+	throw new Exception('Required modules not found: cURL & JSON');
 }
 else if(PHP_SAPI !== 'cli')
 {
@@ -82,7 +82,7 @@ if($mode === null || ($mode === 'add' && ($hostname === null || $recordvalue ===
 	print("It's required to place a file called .inwx.ini in your home directory. Example configuration below:\n\n");
 	print("  username   = \"your INWX username\"\n  password   = \"your INWX password\"\n  secret     = \"TOTP shared secret\"\n  persistent = <true|false>\n\n");
 	print("secret is optional and only required if your account is protected by 2-factor-authentication.\n\n");
-	print("Required:    PHP 5.5 or newer and cURL/JSON/XML-RPC extensions.\n");
+	print("Required:    PHP 5.5 or newer and cURL/JSON extensions.\n");
 	print("Recommended: PHP INTL extension for IDN (Punycode) support.\n");
 	print("BT & Wiki:   https://github.com/froonix/acme-dns-inwx\n\n");
 	print("Usage examples:\n\n");
@@ -351,8 +351,9 @@ class INWX
 		$this->setOpt(CURLOPT_TIMEOUT, 90);
 		$this->setOpt(CURLOPT_RETURNTRANSFER, true);
 		$this->setOpt(CURLOPT_SSL_VERIFYPEER, true);
-		$this->setOpt(CURLOPT_HTTPHEADER, ['Content-Type: text/xml']);
-		$this->setOpt(CURLOPT_URL, 'https://api.domrobot.com/xmlrpc/');
+		$this->setOpt(CURLOPT_USERAGENT, sprintf('ACME-DNS-INWX (PHP/%s)', PHP_VERSION));
+		$this->setOpt(CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+		$this->setOpt(CURLOPT_URL, 'https://api.domrobot.com/jsonrpc/');
 		$this->setOpt(CURLOPT_POST, true);
 	}
 
@@ -379,7 +380,7 @@ class INWX
 		// Send action with cleaned arguments to syslog.
 		syslog(LOG_INFO, sprintf('%s.%s: %s', $object, $method, json_encode($safe_args)));
 
-		$this->setOpt(CURLOPT_POSTFIELDS, xmlrpc_encode_request(strtolower(sprintf('%s.%s', $object, $method)), $args, ['verbosity' => 'no_white_space', 'escaping' => 'markup', 'encoding' => 'UTF-8']));
+		$this->setOpt(CURLOPT_POSTFIELDS, json_encode(['method' => strtolower(sprintf('%s.%s', $object, $method)), 'params' => $args]));
 
 		if(($result = curl_exec($this->curl)) === false)
 		{
@@ -389,10 +390,7 @@ class INWX
 		{
 			throw new RuntimeException('Empty response');
 		}
-
-		$result = xmlrpc_decode($result, 'UTF-8');
-
-		if($result === null)
+		else if(($result = json_decode($result, true)) === null)
 		{
 			throw new RuntimeException('Invalid response (NULL)');
 		}
