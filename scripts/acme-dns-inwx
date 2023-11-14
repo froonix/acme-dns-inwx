@@ -21,7 +21,7 @@ if(version_compare(PHP_VERSION, '5.5.0', '<'))
 }
 else if(!extension_loaded('curl') || !extension_loaded('json'))
 {
-	throw new Exception('Required modules not found: cURL & JSON');
+	throw new Exception('Required modules not found: cURL || JSON');
 }
 else if(PHP_SAPI !== 'cli')
 {
