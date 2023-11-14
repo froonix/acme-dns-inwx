@@ -385,10 +385,18 @@ class INWX
 		{
 			throw new RuntimeException(curl_error($this->curl), curl_errno($this->curl));
 		}
+		else if($result === '')
+		{
+			throw new RuntimeException('Empty response');
+		}
 
 		$result = xmlrpc_decode($result, 'UTF-8');
 
-		if($return && $result['code'] === 2303)
+		if($result === null)
+		{
+			throw new RuntimeException('Invalid response (NULL)');
+		}
+		else if($return && $result['code'] === 2303)
 		{
 			return false;
 		}
