@@ -16,18 +16,18 @@ set -euf -o pipefail
 cd "$(dirname "$(readlink -f "$0")")"
 
 if [[ "${1-}" == "--wildcard" ]]
-then V2=1; shift; else V2=0; fi
+then V2=true; shift; else V2=; fi
 
 DOMAIN=${1-}; NS=${2-DEFAULT}
 SCRIPT=${3-../scripts/acme-dns-inwx}
-WAIT_TRIES=100; WAIT_DNS=12; WAIT_NEXT=5
+WAIT_TRIES=333; WAIT_DNS=12; WAIT_NEXT=5
 CHALLENGE_PREFIX="_acme-challenge"
 
 if [[ "$DOMAIN" == "" ]]; then echo "Usage: $0 [--wildcard] <domain> [<primary-nameserver> [<path-to-script>]]" 1>&2; exit 1
 elif [[ ! -x "$SCRIPT" ]]; then echo "Invalid path to script: $SCRIPT" 1>&2; exit 1; fi
 if [[ "$NS" == "DEFAULT" ]]; then NS=; else NS="@$NS"; fi
 
-tmpfile=`mktemp`; logfile=`mktemp`
+tmpfile=$(mktemp); logfile=$(mktemp)
 echo "Logfile for errors: ${logfile}"
 
 function status
@@ -42,6 +42,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RESET='\033[0m'
 
+#shellcheck disable=SC2034
 for i in {1..100}
 do
 	# \n
@@ -84,8 +85,9 @@ do
 		result=0
 		if [[ -n "$V2" ]]
 		then
-			while IFS='' read -r line || [[ -n "$line" ]]
+			while IFS='' read -r line
 			do
+				[[ -z "$line" ]] && continue
 				if [[ "$line" == "\"$txtvalue-1\"" ]];   then ((result+=1))
 				elif [[ "$line" == "\"$txtvalue-2\"" ]]; then ((result+=2))
 				else ((result+=10)); fi
